@@ -1,0 +1,48 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram name="Figure2_Data_Flow">
+    <mxGraphModel dx="1100" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="y" value="True label y(r,c)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2EEE6;strokeColor=#2C5F2D;fontColor=#1F2A1F;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="z" value="Classifier logit z" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF1E6;strokeColor=#2C5F2D;fontColor=#1F2A1F;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="260" y="200" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="t" value="Temperature scaling
+p = sigma(2*mu*z / T)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEBD3;strokeColor=#2C5F2D;fontColor=#1F2A1F;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="480" y="200" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="b" value="Bayes update
+b &lt;- b * LR" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF1E6;strokeColor=#2C5F2D;fontColor=#1F2A1F;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="730" y="200" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="pi" value="Policy pi(a|o)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEBD3;strokeColor=#2C5F2D;fontColor=#1F2A1F;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="950" y="200" width="150" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="n" value="Agent moves; next cell observed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2EEE6;strokeColor=#2C5F2D;fontColor=#1F2A1F;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="480" y="380" width="300" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="e0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#5A8F4A;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;" edge="1" parent="1" source="y" target="z">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#5A8F4A;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;" edge="1" parent="1" source="z" target="t">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="p(y|x)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#5A8F4A;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;" edge="1" parent="1" source="t" target="b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="o" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#5A8F4A;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;" edge="1" parent="1" source="b" target="pi">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#5A8F4A;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;" edge="1" parent="1" source="pi" target="n">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="new cell" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#5A8F4A;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;dashed=1;" edge="1" parent="1" source="n" target="y">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
