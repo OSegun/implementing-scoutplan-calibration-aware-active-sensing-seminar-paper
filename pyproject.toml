@@ -1,0 +1,30 @@
+[project]
+name = "scoutplan"
+version = "0.1.0"
+description = "Calibration-aware active sensing: coupling classifier calibration to an RL path planner for energy-constrained aerial crop scouting"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Oluwasegun Odusina" }]
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+figures = ["matplotlib>=3.7"]
+paper = ["python-docx>=1.1"]
+full = ["matplotlib>=3.7", "python-docx>=1.1"]
+
+[project.scripts]
+scoutplan = "run:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "scipy_free", "field", "perception", "env", "agents",
+    "experiment", "run_jobs", "make_diagrams", "make_result_figures",
+    "paper_build", "paper_part1", "paper_part2", "make_paper", "run",
+]
