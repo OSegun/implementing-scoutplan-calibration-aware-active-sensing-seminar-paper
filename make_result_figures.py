@@ -1,4 +1,4 @@
-"""Result figures (5-8) built from the measured CSVs in ./results."""
+"""Result figures built from the measured CSVs in ./results."""
 from __future__ import annotations
 import csv, os, sys, json
 import numpy as np

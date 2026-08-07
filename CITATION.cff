@@ -1,0 +1,65 @@
+cff-version: 1.2.0
+message: >-
+  This repository is the reproduction package for the seminar paper listed under
+  "preferred-citation". Please cite the paper for the study itself, and this software
+  for the code and data.
+title: "ScoutPlan: calibration-aware active sensing for energy-constrained aerial crop scouting"
+abstract: >-
+  Reproduction package for "Development and Evaluation of a Calibration-Aware REINFORCE
+  Agent for Energy-Efficient Aerial Agricultural Surveillance" (Odusina, 2026, Miva Open
+  University). Informative path planning assumes the confidence signal it consumes is
+  calibrated. Deep classifiers are systematically miscalibrated and degrade further under
+  distribution shift, yet no prior work quantifies how that error propagates through a
+  planner into mission outcomes. The study closes the gap with a controlled instrument:
+  temperature scaling divides classifier logits by a scalar before the decision link,
+  which leaves accuracy provably invariant while sweeping calibration error. Across 195
+  executed runs, detections per joule for a coverage baseline collapse 13.4x as the
+  classifier moves from overconfident to underconfident, with accuracy held at 0.8161
+  throughout. Two pre-registered hypotheses are reported as not supported and refuted
+  respectively: spatial clustering does not predict planner advantage, and degradation is
+  not monotone in calibration error magnitude. The direction of miscalibration governs
+  outcomes, not its size. All results come from a NumPy-only simulation runnable on a
+  free-tier kernel.
+authors:
+  - family-names: Odusina
+    given-names: Oluwasegun Ibrahim
+    orcid: ""
+version: 1.0.0
+date-released: 2026-08-07
+license: MIT
+repository-code: "https://github.com/OSegun/scoutplan"
+type: software
+keywords:
+  - reinforcement learning
+  - informative path planning
+  - uncertainty calibration
+  - active sensing
+  - precision agriculture
+
+# The work this code exists to support. Cite this, not the software, when
+# referring to the study, its method or its findings.
+preferred-citation:
+  type: thesis
+  title: >-
+    Development and Evaluation of a Calibration-Aware REINFORCE Agent for
+    Energy-Efficient Aerial Agricultural Surveillance
+  authors:
+    - family-names: Odusina
+      given-names: Oluwasegun Ibrahim
+  year: 2026
+  institution:
+    name: Miva Open University
+  thesis-type: Seminar paper
+  # TODO: add the paper URL or DOI once it is published.
+  url: ""
+
+references:
+  - type: software
+    title: "scoutfield: implementation phase"
+    authors:
+      - family-names: Odusina
+        given-names: Oluwasegun Ibrahim
+    repository-code: "https://github.com/OSegun/scoutfield"
+    notes: >-
+      Replaces this study's surrogate classifier with a fine-tuned EfficientNet-B0 and
+      REINFORCE with PPO. Pins this repository at v1.0.0 as a dependency.
