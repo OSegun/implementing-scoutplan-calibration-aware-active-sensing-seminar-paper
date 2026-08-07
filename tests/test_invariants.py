@@ -1,5 +1,5 @@
 """
-Regression tests for the invariants declared in CLAUDE.md section 7.
+Regression tests for the invariants.
 Run with: python -m unittest discover -s tests   (from inside scoutplan/)
 or:       python -m pytest tests                 (if pytest is installed)
 
@@ -42,7 +42,7 @@ class TestCalibrationShape(unittest.TestCase):
 
 
 class TestEnvironmentContract(unittest.TestCase):
-    """Invariant 4: the info dict keeps the keys the figures/paper read."""
+    """Invariant 4: the info dict keeps the keys the figures read."""
 
     REQUIRED_KEYS = {"recall", "precision", "detections_per_joule",
                       "false_alarms", "coverage", "time_to_first_detection"}

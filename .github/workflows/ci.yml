@@ -1,0 +1,32 @@
+name: invariants
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      # The four properties that make the study's numbers meaningful: accuracy
+      # invariance under T, ECE minimised at T=1, seeded reproducibility, and
+      # baselines paying the same energy as the learned agent.
+      - name: Invariant tests
+        run: python -m pytest -v
+
+      # ~12 s. Runs the field generator, the calibration instrument and one full
+      # rollout end to end, and asserts accuracy does not move with temperature.
+      - name: Smoke test
+        run: python run.py smoke

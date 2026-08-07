@@ -1,565 +1,424 @@
-# ScoutPlan: Calibration-Aware Active Sensing
+# scoutplan
 
-Reference implementation and reproduction package for the seminar paper
-*Calibration-Aware Active Sensing: Coupling Deep Classifier Uncertainty to a
-Reinforcement Learning Path Planner for Energy-Constrained Aerial Crop
-Disease Scouting* (Odusina, 2026, Miva Open University).
+**A miscalibrated classifier can cost a drone 13× its detection efficiency without losing
+a single point of accuracy.** A NumPy-only pilot study that measures how classifier
+calibration error propagates through an informative path planner into mission outcomes.
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
-![Dependencies: NumPy only](https://img.shields.io/badge/core%20deps-NumPy%20only-green)
+Reproduction package for **_Development and Evaluation of a Calibration-Aware REINFORCE
+Agent for Energy-Efficient Aerial Agricultural Surveillance_** — Odusina, 2026, Miva Open
+University. <!-- TODO: link the paper here once published. -->
 
----
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
+![core deps](https://img.shields.io/badge/core%20deps-NumPy%20only-2C5F2D)
+![runs](https://img.shields.io/badge/executed%20runs-195-5A8F4A)
+![license](https://img.shields.io/badge/license-MIT-green)
 
-## Abstract
+No budget, no GPU, no paid data. The full sweep runs in about fifteen minutes on a
+free-tier Colab or Kaggle kernel.
 
-Informative path planning for autonomous scouting assumes the information
-signal it consumes — a classifier's reported confidence — is calibrated.
-Deep classifiers are systematically miscalibrated and degrade further under
-distribution shift, yet no prior work quantifies how that miscalibration
-propagates through a planner into mission-level outcomes. This study closes
-that gap with a controlled instrument: temperature scaling divides classifier
-logits by a scalar `T` before the decision link, which — because the link is
-strictly monotone and the decision boundary sits at logit 0 — leaves
-classification accuracy invariant while sweeping calibration error across
-five decades of magnitude. Coupling this instrument to a Bayesian belief
-planner in a simulated energy-constrained aerial crop-scouting task, we show
-that detections-per-joule for a coverage ("lawnmower") baseline collapses
-**13.5×** (0.0781 → 0.0058) as the classifier moves from overconfident to
-underconfident, with accuracy held fixed at 0.8161 throughout. A learned
-REINFORCE planner degrades only 1.84×, reversing the ranking at high
-miscalibration (beats the coverage baseline **7.4×** at `T=4`) despite losing
-to it in absolute terms at every temperature. Two pre-registered hypotheses
-are tested: spatial-clustering strength does **not** predict planner
-advantage (H1, not supported), and planner degradation is **not** monotone
-in calibration error magnitude (H2, refuted) — the *direction* of
-miscalibration, not its size, governs outcomes. All results are produced by
-a NumPy-only simulation runnable on a free-tier Colab/Kaggle kernel with no
-budget, no GPU, and no paid data.
+> **This repository is frozen at `v1.0.0`.** It is the reproduction package for the
+> numbers below and does not change. Active development continues in
+> [**scoutfield**](https://github.com/OSegun/scoutfield), which replaces the surrogate
+> classifier with a fine-tuned EfficientNet-B0 and REINFORCE with PPO, and pins this
+> repository as a dependency.
 
 ---
 
-## 1. Introduction
+## The question
 
-### 1.1 Motivation
+Informative path planning decides where to look next by maximising expected information
+gain. It assumes the signal it consumes — a classifier's reported confidence — is
+calibrated. Deep classifiers are systematically miscalibrated (Guo et al., 2017) and
+degrade further under the distribution shift a field deployment guarantees. Nobody had
+quantified how that error propagates into planner performance: the question falls between
+two literatures, because path planning assumes good uncertainty and the calibration
+community never closes a control loop around it.
 
-Aerial crop scouting under a battery budget is fundamentally a sequential
-decision problem: where should a drone look next, given a limited energy
-budget and a noisy disease detector? Reinforcement-learning path planners
-that consume classifier confidence to prioritize search are an increasingly
-common answer. Every such planner makes an unstated assumption: that
-*confidence means what it says* — that a reported probability of 0.9 is
-right roughly 90% of the time. Deep networks routinely violate this (Guo et
-al., 2017), and the violation worsens exactly when it matters most — under
-the distribution shift a field deployment guarantees.
+**RQ1** — Does spatial aggregation of disease change the advantage of an adaptive planner
+over a fixed-coverage baseline?
+**RQ2** — How does miscalibration, *at fixed accuracy*, affect detections per joule,
+recall, precision and false alarms?
 
-### 1.2 Research questions
+## The instrument
 
-- **RQ1** — Does the spatial aggregation of disease in the field (clustering
-  strength) change the relative advantage of an adaptive planner over a
-  fixed-coverage baseline?
-- **RQ2** — How does classifier miscalibration, at fixed accuracy, affect
-  planner performance (detections per joule, recall, precision, false
-  alarms)?
+Temperature scaling divides classifier logits by a scalar `T` before the decision link.
+Because the link is strictly monotone and the decision boundary sits at logit 0, dividing
+by any `T > 0` cannot move the arg-max — so **accuracy is invariant while confidence is
+not**. Sweeping `T` sweeps calibration error with accuracy pinned, which is the only way to
+attribute an effect to calibration rather than to accuracy.
 
-### 1.3 Contribution
+<p align="center">
+  <img src="figures/Figure5_Calibration_Instrument.png" width="880"
+       alt="Left: accuracy flat at 0.816 across T while mean confidence falls from 0.94 to 0.62. Right: ECE minimised at T=1 and rising in both directions.">
+</p>
 
-1. A controlled experimental instrument — a temperature-scaled surrogate
-   classifier — that varies calibration while provably holding accuracy
-   constant, so calibration effects cannot be confounded with accuracy
-   effects.
-2. A Bayesian-belief scouting environment in which miscalibration enters as
-   a *systematic bias in belief updates*, not additive noise — the
-   mechanism that makes the effect a control problem rather than a
-   measurement problem.
-3. An empirical demonstration, across 195 runs, that calibration error
-   direction (not magnitude) governs planner performance, that this holds
-   across four planners of increasing sophistication, and that a learned
-   planner is comparatively — though not absolutely — robust to it.
-4. A fully reproducible, dependency-light (NumPy-only) implementation that
-   runs on free infrastructure, so the study is repeatable by anyone with a
-   Colab account.
+**Figure 5.** The instrument working. Accuracy (left, solid) is a flat line at **0.8161**
+across every temperature — identical to four decimal places, which the test suite asserts.
+Mean confidence (dashed) falls from 0.940 at `T`=0.3 to 0.618 at `T`=4. ECE (right) is
+minimised at `T`=1 (0.0037) and rises in *both* directions, to 0.124 when overconfident and
+0.198 when underconfident. That V shape is what makes direction separable from magnitude —
+and direction turns out to be what matters.
 
-### 1.4 Scope and honesty about limitations
+A real CNN cannot give this counterfactual, because accuracy and calibration co-vary under
+retraining. Only a post-hoc scalar separates them. That is why the pilot uses a surrogate,
+and why replacing it with a real classifier is the next phase's job rather than this one's.
 
-This is a **pilot study**: the classifier is a mathematically faithful
-surrogate rather than a fine-tuned CNN, and the learned agent is
-under-trained by the standards of the reinforcement-learning literature (see
-§7). Both hypotheses were tested, not assumed, and one is reported as
-refuted rather than dropped. The learned agent loses to the coverage
-baseline in absolute terms at every temperature tested, and this is stated
-plainly rather than reframed. See §7 for the full account.
+| `T` | Accuracy | ECE | Mean confidence | Direction |
+| --- | --- | --- | --- | --- |
+| 0.3 | 0.816075 | 0.1241 | 0.9402 | overconfident |
+| 0.5 | 0.816075 | 0.0852 | 0.9013 | overconfident |
+| **1.0** | 0.816075 | **0.0037** | 0.8170 | **calibrated** |
+| 2.0 | 0.816075 | 0.1070 | 0.7095 | underconfident |
+| 3.0 | 0.816075 | 0.1641 | 0.6519 | underconfident |
+| 4.0 | 0.816075 | 0.1980 | 0.6180 | underconfident |
 
----
-
-## 2. Related Work (brief)
-
-| Area | Gap this work sits in |
-|---|---|
-| **Calibration** (Guo et al., 2017; Frenkel & Goldberger, 2022) | Establishes that deep classifiers are miscalibrated and that temperature scaling is a monotone, accuracy-preserving fix — but stops at the classifier boundary. Never closes a control loop around the calibrated output. |
-| **Informative path planning** (coverage and entropy-driven planners for scouting/precision agriculture) | Assumes the information signal it consumes is calibrated; does not question that assumption or measure its cost when violated. |
-| **Field epidemiology / spatial point processes** (Heck et al., 2021) | Establishes that crop disease is spatially aggregated, not uniform — motivates the Neyman–Scott cluster field used here (§3.1) instead of a uniform-random field. |
-| **RL evaluation methodology** (Colas et al., 2018, 2019; Agarwal et al., 2021) | Establishes that small-seed RL comparisons need bootstrap intervals and outlier-robust aggregates (IQM), not bare means — adopted directly here (§4.4). |
-
-The full literature review, with 68 references, is in the companion seminar
-paper (`../Seminar_Paper_Calibration_Aware_Active_Sensing.docx`).
+<sub>`results/calibration_table.csv`. Accuracy is identical down the column. That is the
+premise of the entire study, not a coincidence.</sub>
 
 ---
 
-## 3. Methodology
+## Results
 
-### 3.1 The field — `field.py`
+195 executed runs: 4 planners × 6 temperatures × 5 seeds, plus a clustering sweep.
+Interquartile mean with 95% stratified bootstrap confidence intervals throughout, per
+Agarwal et al. (2021) — never mean ± std over three seeds, which is the commonest reason
+RL results fail to replicate.
 
-`DiseaseField` draws disease maps from a **Neyman–Scott cluster process**:
-parent foci scattered uniformly at random, offspring (diseased cells)
-scattered around each focus with dispersal scale `sigma`. This reproduces
-the aggregated, non-uniform spatial pattern field epidemiology reports,
-rather than assuming disease is spread uniformly at random. `sigma` is the
-independent variable for RQ1: small `sigma` gives tight foci, large `sigma`
-approaches spatial randomness. `morisita_index()` reports the resulting
-aggregation as a measurement (>1 = clustered) so RQ1 is answered from data,
-not from the field-generation parameters alone.
+### 1. Calibration error changes planner performance, at fixed accuracy
 
-### 3.2 The instrument — `perception.py` ⭐
+<p align="center">
+  <img src="figures/Figure6_Calibration_Sweep.png" width="880"
+       alt="Detections per joule against temperature for four planners. Lawnmower collapses steeply; GreedyEntropy flattens and overtakes it past T=2.">
+</p>
 
-The methodological core of the study. `CalibratedClassifier.observe()` draws
-a latent logit `z` from a class-conditional Gaussian whose separation `mu`
-is set from a target accuracy, then reports `sigmoid(2·mu·z / T)`.
+**Figure 6.** Detections per joule against `T`. Accuracy is constant along the x-axis, so
+every change here is caused by calibration alone.
 
-Because the link is strictly monotone and the decision boundary sits at
-logit 0:
+| Planner | `T`=0.3 | `T`=1.0 | `T`=4.0 | Degradation 0.3→4 |
+| --- | --- | --- | --- | --- |
+| Random | 0.0466 | 0.0440 | 0.0336 | 1.39× |
+| **Lawnmower** | **0.0781** | 0.0633 | **0.0058** | **13.4×** |
+| GreedyEntropy | 0.0786 | 0.0494 | 0.0427 | **1.84×** |
+| REINFORCE | 0.0342 | 0.0320 | 0.0215 | 1.59× |
 
-- the **hard prediction** depends only on `sign(z)` → **accuracy is
-  invariant to `T`**
-- the **reported confidence** depends on `T` → **calibration is the only
-  quantity that moves**
+<sub>`results/summary.json`. IQM over 5 seeds; CIs in the JSON and as shaded bands above.</sub>
 
-`T = 1` is exactly calibrated; `T < 1` is overconfident; `T > 1` is
-underconfident. This is the entire experimental design in one relationship,
-and it is what makes the study affordable: no retraining is required to
-sweep calibration, because a real CNN's accuracy and calibration co-vary
-under retraining and cannot be independently swept.
+The coverage baseline collapses **13.4×** while its accuracy does not move at all. That is
+the headline: an engineer swapping in a classifier with identical benchmark accuracy but
+worse calibration would see mission efficiency fall by an order of magnitude and find
+nothing wrong with the model.
 
-`expected_calibration_error()` (binned ECE, Guo et al. 2017),
-`reliability_curve()`, and `measure_calibration()` (which empirically
-re-verifies accuracy-invariance from samples rather than asserting it)
-complete the module.
+**The ranking reverses.** Lawnmower beats GreedyEntropy at `T` ≤ 1 and loses to it **7.3×**
+at `T`=4. Which planner you should deploy depends on how well calibrated your classifier
+is — a dependency no planning paper states, because none of them vary calibration.
 
-### 3.3 The environment — `env.py`
+### 2. H2 refuted: direction governs, not magnitude
 
-`ScoutEnv` is a POMDP with a Gymnasium-style `reset()` / `step(a)`
-interface:
+The pre-registered hypothesis was that performance degrades monotonically with ECE. It does
+not. ECE at `T`=0.3 (0.1241) and `T`=2.0 (0.1070) are comparable, but Lawnmower scores
+0.0781 at the first and 0.0394 at the second — a 2× difference at near-equal ECE. The sign
+of the error is what matters.
 
-- **State** — grid position, remaining energy, a per-cell Bayesian belief
-  map, visit counts.
-- **Action space** — 8-connected move.
-- **Reward** — `α·(belief-entropy reduction) + λ·(new true detection) −
-  μ·(energy cost)`.
-- **Energy model** — `E_HOVER + E_TRANSLATE · distance`, debited *before*
-  the observation is drawn, so the agent cannot see the value of an
-  observation before paying for it.
+<p align="center">
+  <img src="figures/Figure7_Recall_Precision.png" width="880"
+       alt="Recall and precision against temperature. Overconfidence raises recall and lowers precision; underconfidence loses both.">
+</p>
 
-`_bayes_update()` is where miscalibration becomes a *control* problem rather
-than a noise problem: the agent treats the classifier's reported probability
-as if it were calibrated, converts it to a likelihood ratio, and multiplies
-it into the belief. A systematically wrong probability drives the posterior
-consistently — not randomly — to the wrong place. Overconfidence collapses
-the posterior after a single look and suppresses revisits that would
-correct it; underconfidence leaves the posterior so diffuse that the
-confirmation threshold `TAU` is never crossed. True detections and false
-alarms are tracked separately, so the precision cost of overconfidence is
-visible rather than hidden inside a recall number.
+**Figure 7.** The mechanism. Miscalibration enters the environment as a *systematic bias in
+Bayesian belief updates*, not as additive noise — which is why it has a direction at all.
 
-### 3.4 The planners — `agents.py`
+- **Overconfidence** (`T` < 1) inflates belief on every observation, so the confirmation
+  threshold is crossed readily. Lawnmower recall reaches **0.628** at `T`=0.3, but precision
+  drops to 0.524 and false alarms rise to **13.0** per episode. It finds more disease and
+  cries wolf more often.
+- **Underconfidence** (`T` > 1) deflates belief, so the threshold is rarely crossed. Recall
+  falls to **0.060** at `T`=4 — a tenfold loss. Precision peaks at 0.737 around `T`=2 and
+  then collapses to 0.369, because by `T`=4 there are so few confirmations left that the
+  ratio becomes noise. Time to first detection stretches from **11.1** steps to **61.8**.
 
-Four planners behind one interface (`act(obs, env) -> action`), each
-isolating a different degree of dependence on the perception signal:
+An overconfident classifier trades precision for recall. An underconfident one loses both.
+Two systems with the same ECE and the same accuracy fail in opposite ways, and any summary
+that reports only ECE magnitude cannot distinguish them.
 
-| Agent | Uses confidence | Role |
-|---|---|---|
-| `RandomAgent` | no | performance floor |
-| `LawnmowerAgent` | only via the confirmation threshold `TAU` | current field practice / coverage-planning literature |
-| `GreedyEntropyAgent` | yes, to rank neighbours by expected entropy reduction | myopic ablation — confidence matters, planning horizon doesn't |
-| `ReinforceAgent` | yes, via the full local belief patch | the learned method |
+GreedyEntropy is the interesting case: its false alarms climb from 12.4 to **32.0** as `T`
+rises, because it deliberately seeks out high-entropy cells and underconfidence makes
+everything look uncertain. It stays efficient by continuing to find disease, but it pays
+for that in precision.
 
-`ReinforceAgent` is REINFORCE with reward-to-go and a learned scalar
-baseline, implemented as a two-layer tanh MLP with hand-written
-backpropagation in NumPy (including global-norm gradient clipping) — no
-deep-learning framework required. PPO (Schulman et al., 2017) is the
-algorithm of record for the full implementation phase; REINFORCE is the
-pilot's stand-in because it runs on a bare kernel.
+### 3. H1 not supported: clustering does not predict planner advantage
 
-### 3.5 Statistics — `experiment.py`
+<p align="center">
+  <img src="figures/Figure8_Cluster_Sweep.png" width="880"
+       alt="Detections per joule against cluster dispersal scale for three planners, with the Morisita index overlaid. All three peak at intermediate clustering.">
+</p>
 
-Per Colas et al. (2018, 2019) and Agarwal et al. (2021): a fixed seed budget
-declared in advance (`SEEDS = [0,1,2,3,4]`), interquartile mean (`iqm()`) as
-the headline statistic (robust to the outlier runs that dominate small-seed
-RL comparisons), and 95% intervals via stratified bootstrap
-(`bootstrap_ci()`, 5000 resamples) — never a bare mean ± std.
+**Figure 8.** Disease is generated by a Neyman–Scott cluster process, because field
+epidemiology reports aggregated rather than uniform patterns. Aggregation is *measured* via
+the Morisita index (dotted, right axis) rather than asserted: it falls from 3.26 at σ=1.0 to
+0.82 at σ=7.0, crossing 1.0 — the random threshold — near σ=4.
+
+The prediction was that adaptive planners gain most on tightly clustered fields. They do
+not. **All three planners peak at intermediate dispersal** (σ=1.6 for Lawnmower, σ=2.5 for
+GreedyEntropy and REINFORCE), and the *gap* between them stays roughly constant. Tight
+clusters are hard for everyone: at σ=1.0 the disease occupies so few cells that a planner
+which has not stumbled into a focus has nothing to exploit, and REINFORCE drops to 0.0095
+detections per joule with recall of 0.10.
+
+The hypothesis is reported as not supported. It was pre-registered, it failed, and burying
+it would make the two that survived less believable.
+
+### 4. The learned planner lost
+
+REINFORCE is beaten by the lawnmower baseline at **every** temperature — 0.0320 against
+0.0633 at `T`=1. It is comparatively robust (1.59× degradation against 13.4×) but never
+absolutely better.
+
+Three identified causes, none of them flattering:
+
+1. **The field was too small to require selectivity.** A 12×12 grid with `BUDGET`=190
+   permits ~78% coverage, and the lawnmower achieves exactly that. When you can visit most
+   of the field, a fixed sweep is near-optimal by construction and there is nothing for
+   adaptivity to buy. REINFORCE covered 20%; that would be an advantage only if coverage
+   were genuinely scarce.
+2. **The observation was myopic.** The agent saw a 5×5 local patch and three scalars. It
+   could hill-climb toward nearby belief but could not plan a route to a distant focus.
+3. **REINFORCE is sample-inefficient.** No value baseline, no trust region, and a reward
+   dominated by rare detection events — 400 training episodes is not enough.
+
+All three are addressed in the next phase, and stating them here is what makes that phase's
+result interpretable if it improves.
 
 ---
 
-## 4. Experimental Setup
-
-### 4.1 Fixed parameters (`experiment.py`, source of truth)
-
-```
-TEMPERATURES = [0.30, 0.50, 1.00, 2.00, 3.00, 4.00]
-SEEDS        = [0, 1, 2, 3, 4]      BASE_ACC = 0.816   # Ahmad et al. (2023)
-GRID  = 12      BUDGET = 190.0      PRIOR = 0.15       TAU = 0.75
-TRAIN_EPISODES = 400                EVAL_EPISODES = 20
-```
-
-Energy model (`env.py`): `E_HOVER = 1.0`, `E_TRANSLATE = 0.6`.
-Reward weights (`ScoutEnv.__init__`): `alpha=1.0, lam=6.0, mu=0.15`.
-
-> ⚠️ `TAU` interacts with `T` by construction (the confirmation threshold is
-> compared against a `T`-dependent confidence). A sensitivity analysis over
-> `TAU` is required before quoting the 13.5× headline as a magnitude that
-> generalises beyond `TAU = 0.75` — see §7 and §8.5 item 4.
-
-### 4.2 Design
-
-- **RQ1 sweep (cluster-strength)** — `sigma ∈ {1.0, 1.6, 2.5, 4.0, 7.0}` ×
-  {Lawnmower, GreedyEntropy, REINFORCE} × 5 seeds, `T` fixed at 1.0.
-- **RQ2 sweep (calibration)** — `T ∈` the six values above × all four agents
-  × 5 seeds, `sigma` fixed at 1.6.
-- **Total** — 195 executed runs (some cells share jobs across sweeps).
-
-### 4.3 Environment requirements
-
-Python 3.10+. **NumPy only** for the experiment core — no PyTorch, no
-TensorFlow, no scipy — so it installs and runs on a bare free-tier Colab or
-Kaggle kernel with no GPU.
-
-| Purpose | Package |
-|---|---|
-| Experiment core | `numpy` |
-| Figures | `matplotlib` |
-| Paper rendering | `python-docx` |
+## Install and reproduce
 
 ```bash
-pip install -r requirements.txt
-# or, for an editable install with optional extras:
-pip install -e ".[full]"
+git clone https://github.com/OSegun/scoutplan.git
+cd scoutplan                       # required: the modules use flat imports
+pip install -r requirements.txt    # numpy + matplotlib. That is all.
 ```
 
-> **Flat imports.** Every module imports its neighbours as `from perception
-> import ...`, so every command in this document must run **from inside
-> `scoutplan/`**, or with `scoutplan/` on `sys.path` (the `run.py` CLI below
-> handles this for you).
+```bash
+python run.py smoke      # ~12 s: field, instrument, one rollout. Asserts accuracy invariance.
+python run.py sweep      # 195 jobs, ~15 min, resumable and interrupt-safe
+python run.py figures    # Figures 5-8 + results/summary.json, from the CSVs
+python -m pytest         # 4 invariant tests
+```
 
-### 4.4 Baselines get identical treatment
+`run.py sweep` is safe to Ctrl-C and re-run. It checkpoints completed jobs to
+`results/_done.json` and resumes; the execution environments this was built for kill long
+processes.
 
-All four planners receive the same observation interface and pay the same
-energy cost per step. No planner is advantaged through the environment
-interface — the comparison is only ever about how each planner *uses* the
-information it is given (Invariant 4, §6).
+**To restart a sweep cleanly, delete `results/_done.json` *and* the results CSVs.** Deleting
+one leaves the driver resuming and appending fresh rows to stale ones, with no warning that
+the analysis now mixes two code versions.
+
+### Number → command
+
+| Number | File | Command |
+| --- | --- | --- |
+| Accuracy / ECE / confidence per `T` | `results/calibration_table.csv` | `run.py figures` |
+| Detections per joule, IQM + CI | `results/summary.json` | `run.py sweep` then `figures` |
+| Recall, precision, false alarms, TTFD, coverage | `results/summary.json` | `run.py sweep` then `figures` |
+| Per-run raw rows | `results/pilot_results.csv` | `run.py sweep` |
+| Clustering sweep + Morisita | `results/cluster_sweep.csv`, `summary.json` → `_cluster` | `run.py sweep` |
+
+Every number in this README is read from those files. If a number here disagrees with them,
+this README is wrong.
 
 ---
 
-## 5. Results
+## Design
 
-Measured over 195 runs; raw CSVs in `results/`, machine-readable summary in
-`results/summary.json`. Any number quoted in the paper or here must trace
-back to one of those two files — nothing is hand-typed.
+Figures 1–4 describe the design rather than the data, so they are authored once and do not
+change when a sweep is re-run. They are shipped here — as PNGs and as editable `.drawio`
+sources in `drawio/`, importable into diagrams.net or Visio — for reuse and modification.
+They are not regenerated by anything in this repository, which is deliberate: diagram
+authoring is a presentation concern, and keeping it out is part of what keeps the
+reproduction package NumPy-only. Figures 5–8, the ones that carry results, *are*
+regenerated here by `run.py figures`.
 
-| Finding | Value |
-|---|---|
-| Accuracy across all temperatures | 0.8161 (invariant, 4 d.p.) |
-| ECE range | 0.0037 (T=1) → 0.1980 (T=4) |
-| Lawnmower detections/joule collapse | 0.0781 → 0.0058 = **13.5×** |
-| Lawnmower recall collapse | 0.628 → 0.060 |
-| GreedyEntropy degradation | 1.84× (robust by comparison) |
-| Ranking reversal at T=4 | GreedyEntropy beats Lawnmower **7.4×** |
+<p align="center">
+  <img src="figures/Figure1_System_Architecture.png" width="820" alt="System architecture: field generator, calibration instrument, POMDP environment, planners, experiment harness.">
+</p>
 
-**H1 (advantage grows with spatial clustering) — not supported.** Sweeping
-`sigma` did not produce a consistent trend in adaptive-planner advantage
-over the coverage baseline.
+**Figure 1.** Five components. The calibration instrument is the only thing that varies
+across the main sweep; everything else is held fixed, which is what makes the comparison
+clean.
 
-**H2 (performance monotone in ECE) — refuted.** Overconfidence
-(`T < 1`) trades precision for recall — the posterior collapses fast and the
-planner over-commits to false leads. Underconfidence (`T > 1`) loses both —
-the posterior never crosses the confirmation threshold. The *direction* of
-miscalibration governs the failure mode, not the ECE magnitude.
+<p align="center">
+  <img src="figures/Figure2_Data_Flow.png" width="820" alt="Data flow from field generation through observation, belief update, action selection and metric logging.">
+</p>
 
-**The learned agent lost to the lawnmower baseline in absolute terms at
-every temperature tested.** This is reported plainly, with three identified
-causes (§7), rather than reframed as a partial win.
+**Figure 2.** Data flow. Note where miscalibration enters: at the Bayesian belief update,
+as a bias on the likelihood ratio. That placement is the study's mechanism claim — a
+miscalibrated classifier does not add noise to the planner's world model, it *skews* it, and
+the skew compounds over an episode.
 
-Figures 1–8 (generated, see §8.4) cover: the disease field and Morisita
-statistic (1–2), the calibration instrument and reliability curves (3–4),
-the RQ2 detections-per-joule and recall collapse (5–6), the RQ1
-cluster-strength sweep (7), and the T=4 ranking reversal (8).
+<p align="center">
+  <img src="figures/Figure3_Algorithm_Flowchart.png" width="720" alt="Episode loop: observe, update belief, check confirmation threshold, select action, deduct energy, terminate on budget exhaustion.">
+</p>
 
----
+**Figure 3.** The episode loop. A detection is confirmed when posterior belief exceeds
+τ = 0.75, which is where the temperature manipulation makes contact with the outcome —
+see the limitation below.
 
-## 6. Discussion
+<p align="center">
+  <img src="figures/Figure4_Sequence_Diagram.png" width="820" alt="Sequence diagram of one timestep across environment, classifier, belief model and agent.">
+</p>
 
-The central result — a 13.5× collapse in detections-per-joule for a
-*fixed-policy* coverage planner, driven purely by a confidence-threshold
-crossing under fixed accuracy — shows that calibration error is not a
-second-order concern for active sensing. It is large enough to invert which
-planner is better. That the learned REINFORCE agent degrades only 1.84× is
-evidence that a policy which conditions on the *full* belief patch, rather
-than a scalar threshold, is structurally more robust to the direction of
-miscalibration — even though this pilot's training budget was too small for
-that robustness to translate into an absolute win (§7).
+**Figure 4.** One timestep. The environment's only contact with perception is a single call:
 
-The refutation of H2 is the more surprising result: practitioners commonly
-reach for ECE as a scalar health check, but two classifiers with similar ECE
-magnitude and opposite miscalibration direction produce qualitatively
-different failure modes (recall loss vs. precision loss). A single-number
-calibration audit would miss this distinction entirely.
-
----
-
-## 7. Limitations
-
-Stated in full in the paper's §3.4 and §4.10.3. In short:
-
-- **Surrogate, not a trained CNN.** The classifier is a mathematically
-  faithful surrogate — it reproduces the accuracy-invariance property
-  exactly — but real classifier errors are correlated across visually
-  similar images, and the surrogate's independent Gaussian draws are not.
-  This is the single most important item on the implementation-phase
-  backlog (§9, item 1).
-- **The learned agent is under-trained and structurally under-powered.**
-  400 episodes, a 5×5 local belief patch, no global map. It loses to the
-  coverage baseline at every temperature. This is reported, not concealed,
-  because concealing it would misstate what a learned planner can currently
-  be trusted to do.
-- **12×12 field, near-exhaustive budget.** The field is small enough that
-  near-complete coverage is affordable within the energy budget, which sets
-  a demanding bar for any adaptive planner to show an absolute advantage.
-- **Five seeds** is the minimum defensible statistical power under the
-  bootstrap-CI protocol (§3.5); intervals are wide in the middle of the
-  temperature range.
-- **`TAU` interacts with `T` by construction** — the 13.5× figure has not
-  yet been shown to be robust to the choice of confirmation threshold
-  (backlog item 4).
-
-None of these affect the calibration-sensitivity result itself, because the
-`T` manipulation is internal to `perception.py` and identical across every
-condition compared.
-
----
-
-## 8. Reproduction & Iteration Guide
-
-### 8.1 Environment setup
-
-```bash
-cd scoutplan                      # required — flat imports, see §4.3
-pip install -r requirements.txt   # numpy, matplotlib, python-docx
-# or:
-pip install -e ".[full]"
+```python
+CalibratedClassifier.observe(true_label: int) -> tuple[float, int]
+#                                                (probability, hard_prediction)
 ```
 
-### 8.2 Smoke test (~12 s)
+Swapping in a real CNN means changing only this method — which is exactly what
+[scoutfield](https://github.com/OSegun/scoutfield) does. Everything downstream is unchanged,
+so any difference in result is attributable to the classifier.
 
-Confirms the field, the calibration instrument, and one planner rollout all
-work, and asserts the accuracy-invariance property live.
-
-```bash
-python run.py smoke
-```
-
-Equivalently, run the automated invariant tests:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Expect accuracy identical across all temperatures tested and ECE lowest at
-`T=1`. **If accuracy moves, the instrument is broken and nothing downstream
-is valid** — stop and diagnose before running anything else.
-
-### 8.3 Full sweep (195 jobs, ~15 minutes on 2 cores)
-
-```bash
-python run.py sweep
-```
-
-This repeatedly invokes the resumable driver (`run_jobs.py`) until it
-reports `ALL_DONE`. It is safe to interrupt (Ctrl-C) at any point — progress
-checkpoints to `results/_done.json` after every job, and re-running resumes
-exactly where it stopped. Control the time budget per invocation with
-`JOB_BUDGET` (seconds, default 60):
-
-```bash
-JOB_BUDGET=120 python run.py sweep          # bash
-$env:JOB_BUDGET=120; python run.py sweep    # PowerShell
-```
-
-To restart the sweep from scratch, delete `results/_done.json`,
-`results/pilot_results.csv`, and `results/cluster_sweep.csv` — otherwise a
-resumed run silently mixes old and new results.
-
-Writes `results/calibration_table.csv`, `pilot_results.csv`,
-`cluster_sweep.csv`.
-
-### 8.4 Figures and paper
-
-```bash
-python run.py figures     # Figures 1-8 -> figures/, drawio/, results/summary.json
-python run.py paper       # renders the .docx from summary.json
-```
-
-or end-to-end:
-
-```bash
-python run.py all
-```
-
-Open the rendered `.docx` in Word, then **right-click the Table of Contents
-→ Update Field** — python-docx can insert the TOC field but only Word can
-compute it.
-
-### 8.5 Running your own iterations
-
-Everything below is a controlled change to one parameter; re-run `python
-run.py all` after each to regenerate results, figures and the paper
-consistently.
-
-| Want to | Edit | Then |
-|---|---|---|
-| Force genuine selectivity (bigger field, tighter budget) | `GRID`, `BUDGET` in `experiment.py` | delete `results/_done.json` and re-sweep |
-| Train the learned agent longer | `TRAIN_EPISODES` in `experiment.py` | re-sweep (REINFORCE dominates runtime, see §8.6) |
-| Different calibration range | `TEMPERATURES` in `experiment.py` | re-sweep |
-| Different confirmation threshold (⚠️ TAU/T interaction, §7) | `TAU` in `experiment.py` | re-sweep, and re-run the `TAU` sensitivity check before quoting headline numbers |
-| Different reward shaping | `alpha`, `lam`, `mu` in `ScoutEnv.__init__` | re-sweep |
-| Swap in a real CNN | Replace `CalibratedClassifier.observe()`, keeping the `(probability: float, prediction: int)` return signature | everything downstream (env, agents, experiment, figures) is unchanged — this is the implementation-phase backlog item 1 |
-| Swap REINFORCE for PPO | Implement a new `Agent` subclass in `agents.py` with the same `act()` / `reset()` interface | wire it into `experiment.py`'s agent list |
-
-### 8.6 Runtime reference
-
-Measured on 2 CPU cores, single seed, `T=1.0`:
-
-| Agent | Time per run | Recall |
-|---|---|---|
-| Random | 0.34 s | 0.259 |
-| Lawnmower | 0.34 s | 0.623 |
-| GreedyEntropy | 0.45 s | 0.255 |
-| REINFORCE | 10.14 s | 0.295 |
-
-REINFORCE dominates the cost (400 training episodes at ~24 ms each) — its 55
-jobs are ~90% of total sweep time. Comment it out of the agent list while
-iterating on the environment, and re-add it for the full sweep.
-
-### 8.7 Invariants that must hold — regression-test before trusting a result
-
-Enforced by `tests/test_invariants.py`; run before and after any code
-change:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-1. **Accuracy is invariant to `T`**, to 4 decimal places. This is the
-   study's entire premise.
-2. **ECE is minimised at `T = 1`** and rises in both directions. If it
-   becomes monotone in one direction, the temperature parameterisation is
-   broken.
-3. **Every run is reproducible from `(agent, seed, T, sigma)`** — no
-   unseeded RNG, no wall-clock or PID entropy anywhere in the experiment
-   path.
-4. **Baselines get the same observation and pay the same energy** as the
-   learned agent (§4.4).
-5. **Paper numbers come from `summary.json`**, never hard-coded into
-   `paper_part*.py`.
-
-### 8.8 Interface contracts — keep stable when extending
-
-| Component | Contract |
-|---|---|
-| `CalibratedClassifier.observe(true_label)` | returns `(probability: float, prediction: int)` |
-| `ScoutEnv.reset()` / `.step(a)` | Gymnasium convention: `obs`, then `(obs, reward, done, info)` |
-| `Agent.act(obs, env)` | returns an int action index; `reset(env)` optional |
-| `info` dict | must keep `recall`, `precision`, `detections_per_joule`, `false_alarms`, `coverage`, `time_to_first_detection` — figures and paper read these keys |
-
----
-
-## 9. Project Status and Backlog
-
-**Phase 1 (seminar/pilot) — done.** 195 runs, seminar paper (35 pp, 58
-refs, 8 figures, 8 tables, 5 code snippets), this package.
-
-**Phase 2 (implementation) — not started.** Priority order:
-
-1. Fine-tune EfficientNet-B0 on PlantVillage; hold out PlantDoc for the
-   distribution-shift test. Replace `CalibratedClassifier.observe()` only —
-   the `(probability, prediction)` signature keeps everything downstream
-   unchanged (§8.5).
-2. PPO via Stable-Baselines3, trained to convergence, with a downsampled
-   global belief map added to the observation.
-3. Scale the field to ≥32×32 with a budget permitting ≤40% coverage,
-   forcing genuine selectivity — the regime where adaptive planning can
-   actually win.
-4. `TAU` sensitivity analysis — required before quoting effect sizes as
-   general (§7).
-5. MC-dropout and deep ensembles; reliability diagrams per condition.
-6. Ground-truth oracle planner; report regret against it.
-7. ScoutPlan application: ONNX export, measured on-device latency, deployed
-   interface.
-
-**Open risks.** Reward shaping is a known time sink — freeze it early.
-Simulator realism will be challenged in review — every constant is cited,
-and sensitivity analyses (item 4 above) are required before generalising
-any headline number.
-
----
-
-## 10. File Map
+### Layout
 
 ```
 scoutplan/
-├── run.py                    CLI entry point: smoke / sweep / figures / paper / all
-├── requirements.txt          numpy, matplotlib, python-docx
-├── pyproject.toml            packaging metadata, optional extras
-├── scipy_free.py             norm_ppf, so no scipy dependency
-├── field.py                  Neyman-Scott disease field + Morisita index
-├── perception.py             calibration instrument + ECE  ⭐
-├── env.py                    POMDP, Bayesian belief, energy model
-├── agents.py                 4 planners incl. NumPy REINFORCE
-├── experiment.py             single-run harness + statistics
-├── run_jobs.py                resumable parallel sweep driver
-├── make_diagrams.py          Figures 1-4 (PNG + .drawio)
-├── make_result_figures.py    Figures 5-8 + summary.json
-├── paper_build.py            .docx rendering machinery
-├── paper_part1.py            Title, abstract, Chapters 1-3
-├── paper_part2.py            Chapters 4-5, references
-├── make_paper.py             builds the paper from measured results
-├── tests/
-│   └── test_invariants.py    regression tests for §8.7's five invariants
-├── results/                  CSVs + summary.json (generated)
-├── figures/                  PNGs (generated)
-└── drawio/                   editable diagram sources (generated)
+├── scipy_free.py            norm_ppf; removes the SciPy dependency
+├── field.py                 Neyman-Scott disease field + Morisita index
+├── perception.py            ⭐ the calibration instrument + ECE
+├── env.py                   POMDP, Bayesian belief, energy model
+├── agents.py                Random, Lawnmower, Spiral, GreedyEntropy, REINFORCE
+├── experiment.py            single-run harness + IQM/bootstrap statistics
+├── run_jobs.py              resumable parallel sweep driver
+├── make_result_figures.py   Figures 5-8 + results/summary.json
+├── run.py                   CLI: smoke | sweep | figures | all
+├── tests/test_invariants.py 4 regression tests
+├── results/                 CSVs + summary.json   (generated by run.py sweep/figures)
+├── figures/                 Figures 1-8 PNG       (5-8 generated; 1-4 shipped)
+└── drawio/                  editable sources for Figures 1-4 (shipped)
 ```
+
+Read and modify in dependency order:
+`scipy_free → field → perception → env → agents → experiment → run_jobs → run`.
+
+**Flat imports.** `env.py` does `from perception import ...`, so every command must be run
+from inside this directory.
+
+### Parameters
+
+```
+TEMPERATURES = [0.30, 0.50, 1.00, 2.00, 3.00, 4.00]
+SEEDS        = [0, 1, 2, 3, 4]        BASE_ACC = 0.816    # Ahmad et al. (2023)
+GRID  = 12       BUDGET = 190.0       PRIOR = 0.15        TAU = 0.75
+TRAIN_EPISODES = 400                  EVAL_EPISODES = 20
+E_HOVER = 1.0    E_TRANSLATE = 0.6    reward: alpha=1.0, lam=6.0, mu=0.15
+```
+
+`experiment.py` is the source of truth. Every physical constant traces to a cited paper;
+where a value is invented it is swept rather than defended.
+
+### Invariants
+
+Four properties the test suite enforces. A change that breaks one is a bug, not a trade-off.
+
+1. **Accuracy is invariant to `T`**, to four decimal places. This is the study's premise.
+2. **ECE is minimised at `T` = 1** and rises in both directions. If it becomes monotone, the
+   parameterisation is broken and H2 is no longer testable.
+3. **Every run reproduces from `(agent, seed, T, sigma)`.** No unseeded RNG, no wall-clock
+   or PID entropy anywhere in the experiment path.
+4. **Baselines get the same observation and pay the same energy** as the learned agent. The
+   proposed method is never advantaged through the interface.
 
 ---
 
+## Limitations
+
+Stated plainly, because the effect sizes above depend on them.
+
+**τ = 0.75 interacts with `T` by construction.** A detection is confirmed when belief
+exceeds τ, and temperature scaling moves how often any fixed threshold is crossed. Some
+portion of the 13.4× collapse is attributable to the threshold rather than to
+miscalibration itself, and this study does not separate them. **The effect size should be
+read as "at τ = 0.75", not as a general magnitude.** The sensitivity analysis that would
+settle it is the first item in the next phase.
+
+**The classifier is a surrogate, not a network.** That is what buys the accuracy-invariance
+counterfactual, and it is also the main threat to external validity. A real classifier's
+errors are correlated with image content in ways a class-conditional Gaussian is not.
+
+**The field is simulated.** Constants are cited where cited values exist, but no drone flew.
+
+**The learned planner is REINFORCE with 400 episodes** — chosen because it needs no deep
+learning framework and therefore runs in the constrained environment, not because it is the
+right algorithm. Its loss to the baseline should be read as a statement about this
+configuration, not about learned planning.
+
+---
+
+## Citing
+
+This repository is the reproduction package for a seminar paper. **Cite the paper for the
+study, its method and its findings**; cite the software only when referring to the code or
+the data.
+
+```bibtex
+@mastersthesis{odusina2026calibration,
+  author      = {Odusina, Oluwasegun Ibrahim},
+  title       = {Development and Evaluation of a Calibration-Aware {REINFORCE} Agent
+                 for Energy-Efficient Aerial Agricultural Surveillance},
+  school      = {Miva Open University},
+  year        = {2026},
+  type        = {Seminar paper},
+  note        = {Reproduction package: \url{https://github.com/OSegun/scoutplan}}
+  % url       = {}   TODO: add the paper link once published
+}
+```
+
+<details>
+<summary>Citing the software itself</summary>
+
+```bibtex
+@software{odusina2026scoutplan,
+  author  = {Odusina, Oluwasegun Ibrahim},
+  title   = {ScoutPlan: calibration-aware active sensing for energy-constrained
+             aerial crop scouting},
+  year    = {2026},
+  version = {v1.0.0},
+  url     = {https://github.com/OSegun/scoutplan},
+  note    = {Reproduction package for Odusina (2026)}
+}
+```
+
+</details>
+
+[`CITATION.cff`](CITATION.cff) declares the paper as `preferred-citation`, so GitHub's
+"Cite this repository" button and most reference managers will offer the paper first.
+MIT licensed.
+
 ## References
 
-Full APA reference list (68 entries) is maintained in
-`../Research_References_and_Plan_Tracker.xlsx` and rendered in the seminar
-paper. Key citations used above:
+Agarwal, R., Schwarzer, M., Castro, P. S., Courville, A., & Bellemare, M. G. (2021). Deep
+reinforcement learning at the edge of the statistical precipice. *NeurIPS 34*.
 
-- Agarwal, R., Schwarzer, M., Castro, P. S., Courville, A. C., & Bellemare,
-  M. (2021). Deep reinforcement learning at the edge of the statistical
-  precipice. *NeurIPS*.
-- Ahmad, I., et al. (2023). Field-condition generalisation of corn foliar
-  disease classifiers. [see reference tracker for full citation]
-- Colas, C., Sigaud, O., & Oudeyer, P.-Y. (2018). How many random seeds?
-  Statistical power analysis in deep reinforcement learning experiments.
-  *arXiv:1806.08295*.
-- Colas, C., Sigaud, O., & Oudeyer, P.-Y. (2019). A hitchhiker's guide to
-  statistical comparisons of reinforcement learning algorithms.
-  *arXiv:1904.06979*.
-- Frenkel, L., & Goldberger, J. (2022). Calibration of medical imaging
-  classification systems with weight scaling. *Journal of Medical Imaging*.
-- Guo, C., Pleiss, G., Sun, Y., & Weinberger, K. Q. (2017). On calibration
-  of modern neural networks. *ICML*.
-- Heck, S., et al. (2021). Spatial aggregation patterns in field crop
-  disease epidemiology. [see reference tracker for full citation]
-- Schulman, J., Wolski, F., Dhariwal, P., Radford, A., & Klimov, O. (2017).
-  Proximal policy optimization algorithms. *arXiv:1707.06347*.
+Ahmad, A., Saraswat, D., & El Gamal, A. (2023). A survey on using deep learning techniques
+for plant disease diagnosis. *Smart Agricultural Technology, 3*, 100083.
+
+Colas, C., Sigaud, O., & Oudeyer, P.-Y. (2019). A hitchhiker's guide to statistical
+comparisons of reinforcement learning algorithms. *arXiv:1904.06979*.
+
+Frenkel, L., & Goldberger, J. (2022). Calibration of medical imaging classification systems
+with weight scaling. *MICCAI 2022*.
+
+Guo, C., Pleiss, G., Sun, Y., & Weinberger, K. Q. (2017). On calibration of modern neural
+networks. *ICML 34*.
+
+Heck, D. W., et al. (2021). Spatial pattern analysis of plant disease epidemics.
+*Phytopathology*.
+
+Williams, R. J. (1992). Simple statistical gradient-following algorithms for connectionist
+reinforcement learning. *Machine Learning, 8*, 229–256.
+
+---
+
+**Topics:** `reinforcement-learning` `uncertainty-quantification` `calibration`
+`informative-path-planning` `active-sensing` `precision-agriculture` `numpy`
+`reproducible-research` `paper-implementations`
